@@ -68,18 +68,15 @@ def gerar_e_enviar_relatorio():
 
         doc.add_paragraph("\n")
 
-        # 4. Busca SUPER INTELIGENTE da Imagem (Procura em todas as colunas da planilha)
+        # 4. Busca INTELIGENTE da Imagem (Consertado para 'in')
         doc.add_heading("📸 Comprovação Visual do Andamento", level=2)
         foto_anexada = False
         
-        # O robô agora varre todas as células da planilha procurando um link de imagem válido
-        for col em df.columns:
+        for col in df.columns:
             valores_coluna = df[col].dropna().astype(str).tolist()
             for valor in valores_coluna:
                 valor_limpo = valor.strip()
-                # Verifica se é um link válido de internet
                 if valor_limpo.startswith("http://") or valor_limpo.startswith("https://"):
-                    # Verifica se o link contém extensões comuns de imagem ou veio do postimg/google
                     if any(ext in valor_limpo.lower() for ext in ['.jpg', '.jpeg', '.png', 'postimg', 'drive.google']):
                         try:
                             resposta_imagem = requests.get(valor_limpo, timeout=15)

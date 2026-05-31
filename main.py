@@ -23,12 +23,12 @@ def gerar_e_enviar_relatorio():
         df = pd.read_csv(LINK_PLANILHA_CSV)
         df.columns = df.columns.str.strip()
 
-        # Correção exata dos cabeçalhos baseados na sua planilha real
+        # Correção dos cabeçalhos
         mapeamento = {
             'Material (A)': 'Material', 'Unid (B)': 'Unid', 'Mínimo (C)': 'Mínimo',
             'Atual (D)': 'Atual', 'Urgência (E)': 'Urgência', 'Preço Ref (F)': 'Preço Ref',
             'Preço Atual (G)': 'Preço Atual', 'Valor Total (H)': 'Valor Total',
-            'Link Obramax (I)': 'Link Obramax', 'ID da Foto (J)': 'ID da Foto', 'ID da Foto': 'ID da Foto'
+            'Link Obramax (I)': 'Link Obramax'
         }
         df.rename(columns=mapeamento, inplace=True)
 
@@ -44,7 +44,7 @@ def gerar_e_enviar_relatorio():
         doc.add_paragraph(f"Data de Emissão: {datetime.date.today().strftime('%d/%m/%Y')}")
         doc.add_paragraph("-" * 60)
 
-        # 3. Análise de Alertas e Consumo (Mínimo vs Atual e Urgência)
+        # 3. Análise de Alertas
         doc.add_heading("🚨 Alertas de Estoque Crítico", level=2)
         alertas_gerados = 0
         
@@ -68,35 +68,41 @@ def gerar_e_enviar_relatorio():
 
         doc.add_paragraph("\n")
 
-        # 4. Processamento automático do Link da Imagem vindo da planilha
+        # 4. Busca SUPER INTELIGENTE da Imagem (Procura em todas as colunas da planilha)
         doc.add_heading("📸 Comprovação Visual do Andamento", level=2)
         foto_anexada = False
         
-        if 'ID da Foto' in df.columns:
-            links_foto = df['ID da Foto'].dropna().tolist()
-            for link in links_foto:
-                link_str = str(link).strip()
-                if link_str.startswith("http://") or link_str.startswith("https://"):
-                    try:
-                        resposta_imagem = requests.get(link_str, timeout=10)
-                        if resposta_imagem.status_code == 200:
-                            memoria_imagem = io.BytesIO(resposta_imagem.content)
-                            doc.add_picture(memoria_imagem, width=Inches(4.5))
-                            doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            doc.add_paragraph("Legenda: Registro fotográfico anexado automaticamente via link da planilha.").alignment = WD_ALIGN_PARAGRAPH.CENTER
-                            foto_anexada = True
-                            break 
-                    except Exception as erro_foto:
-                        doc.add_paragraph(f"[Aviso: Encontrado um link de foto, mas ocorreu um erro no download: {erro_foto}]")
+        # O robô agora varre todas as células da planilha procurando um link de imagem válido
+        for col em df.columns:
+            valores_coluna = df[col].dropna().astype(str).tolist()
+            for valor in valores_coluna:
+                valor_limpo = valor.strip()
+                # Verifica se é um link válido de internet
+                if valor_limpo.startswith("http://") or valor_limpo.startswith("https://"):
+                    # Verifica se o link contém extensões comuns de imagem ou veio do postimg/google
+                    if any(ext in valor_limpo.lower() for ext in ['.jpg', '.jpeg', '.png', 'postimg', 'drive.google']):
+                        try:
+                            resposta_imagem = requests.get(valor_limpo, timeout=15)
+                            if resposta_imagem.status_code == 200:
+                                memoria_imagem = io.BytesIO(resposta_imagem.content)
+                                doc.add_picture(memoria_imagem, width=Inches(4.5))
+                                doc.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                doc.add_paragraph("Legenda: Registro fotográfico anexado automaticamente via planilha.").alignment = WD_ALIGN_PARAGRAPH.CENTER
+                                foto_anexada = True
+                                break
+                        except Exception:
+                            continue
+            if foto_anexada:
+                break
 
         if not foto_anexada:
             doc.add_paragraph("[Nenhum link de foto ativo ou válido inserido na planilha para este período.]")
 
         doc.add_paragraph("\n")
 
-        # 5. Tabela Geral de Materiais no Word
+        # 5. Tabela Geral de Materiais
         doc.add_heading("📋 Tabela Consolidada de Controle", level=2)
-        colunas_exibicao = [c for c in df.columns if 'Link' not in c and 'ID' not in c]
+        colunas_exibicao = [c for c in df.columns if 'Link' not in c and 'ID' not in c and 'Foto' not in c]
         
         tabela_dados = doc.add_table(rows=1, cols=len(colunas_exibicao))
         tabela_dados.style = 'Table Grid'
@@ -124,7 +130,7 @@ def gerar_e_enviar_relatorio():
             payload_arquivos = {"document": arquivo_word}
             payload_dados = {
                 "chat_id": TELEGRAM_CHAT_ID,
-                "caption": "📊 *Relatório do Prédio Gerado!*\nFala Marcos, o documento do Word foi montado com sucesso e os alertas de estoque foram gerados!"
+                "caption": "📊 *Relatório Atualizado da Obra!*\nMarcos, relatório gerado com sucesso incluindo a verificação inteligente de imagens!"
             }
             resposta = requests.post(url_telegram, data=payload_dados, files=payload_arquivos)
             
@@ -135,7 +141,7 @@ def gerar_e_enviar_relatorio():
         return False
 
 # ==========================================
-# PAINEL DO STREAMLIT (Interface Visual)
+# PAINEL DO STREAMLIT
 # ==========================================
 st.title("🚀 Central de Automação de Engenharia")
 st.write("Conectado à Planilha do Google e integrado ao Telegram.")
@@ -143,9 +149,9 @@ st.write("Conectado à Planilha do Google e integrado ao Telegram.")
 st.markdown("---")
 
 if st.button("Disparar Primeiro Teste Agora"):
-    with st.spinner("Acessando sua planilha, checando estoques e montando o Word..."):
+    with st.spinner("Buscando dados e fotos na planilha..."):
         sucesso = gerar_e_enviar_relatorio()
     if sucesso:
-        st.success("Perfeito Marcos! Relatório despachado diretamente para o seu Telegram.")
+        st.success("Perfeito Marcos! Relatório enviado com sucesso para o Telegram.")
     else:
-        st.error("Erro ao enviar. Verifique se a planilha está aberta para leitura pública.")
+        st.error("Erro ao gerar relatório. Verifique os dados da planilha.")

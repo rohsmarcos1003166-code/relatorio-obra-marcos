@@ -10,7 +10,8 @@ import io
 # ==========================================
 # CONFIGURAÇÕES DO SEU PROJETO (Marcos)
 # ==========================================
-LINK_PLANILHA_CSV = "https://docs.google.com/spreadsheets/d/1fu8dYFwQ2rKQoa5aj2nFXHvdlO56Ilcz3Pmt5P8VPgQ/export?format=csv"
+# Link atualizado da sua nova planilha do Google
+LINK_PLANILHA_CSV = "https://docs.google.com/spreadsheets/d/1xFpGJI7Bq3qj48hVSUO190qHE-N2kXg3r-BmQaSM1uk/export?format=csv"
 TELEGRAM_TOKEN = "8568148429:AAGzu7zf-n-fGJnUpaNGVCLvQnsR2JxJ3fs"
 TELEGRAM_CHAT_ID = "7668457919"
 
@@ -21,14 +22,20 @@ def gerar_e_enviar_relatorio():
     try:
         # 1. Lê a planilha atualizada do Google
         df = pd.read_csv(LINK_PLANILHA_CSV)
+        
+        # Limpa espaços invisíveis que possam existir nos nomes das colunas
         df.columns = df.columns.str.strip()
 
-        # Correção dos cabeçalhos
+        # Mapeamento inteligente baseado exatamente nas colunas da sua nova planilha
         mapeamento = {
-            'Material (A)': 'Material', 'Unid (B)': 'Unid', 'Mínimo (C)': 'Mínimo',
-            'Atual (D)': 'Atual', 'Urgência (E)': 'Urgência', 'Preço Ref (F)': 'Preço Ref',
-            'Preço Atual (G)': 'Preço Atual', 'Valor Total (H)': 'Valor Total',
-            'Link Obramax (I)': 'Link Obramax'
+            'Material (A)': 'Material',
+            'Unid (B)': 'Unid',
+            'Mínimo (C)': 'Mínimo',
+            'Estoque atual(saldo)': 'Atual',
+            'Urgencia': 'Urgência',
+            'Preço Ref (F)': 'Preço Ref',
+            'Preço atual': 'Preço Atual',
+            'Valor total': 'Valor Total'
         }
         df.rename(columns=mapeamento, inplace=True)
 
@@ -44,11 +51,12 @@ def gerar_e_enviar_relatorio():
         doc.add_paragraph(f"Data de Emissão: {datetime.date.today().strftime('%d/%m/%Y')}")
         doc.add_paragraph("-" * 60)
 
-        # 3. Análise de Alertas
+        # 3. Análise de Alertas de Estoque
         doc.add_heading("🚨 Alertas de Estoque Crítico", level=2)
         alertas_gerados = 0
         
         for idx, linha in df.iterrows():
+            # Puxa os dados tratando textos e números vazios
             atual = pd.to_numeric(linha.get('Atual', 0), errors='coerce')
             minimo = pd.to_numeric(linha.get('Mínimo', 0), errors='coerce')
             material = linha.get('Material', 'Item Desconhecido')
@@ -56,7 +64,7 @@ def gerar_e_enviar_relatorio():
             
             if not pd.isna(atual) and not pd.isna(minimo) and atual <= minimo:
                 alertas_gerados += 1
-                if urgencia == "ALTA":
+                if urgencia == "ALTA" or urgencia == "CRÍTICA":
                     p = doc.add_paragraph()
                     r = p.add_run(f"🔴 CRÍTICO: {material} está com saldo {atual:.0f} (Mínimo exigido: {minimo:.0f}). Urgência de Compra Máxima!")
                     r.font.bold = True
@@ -68,7 +76,7 @@ def gerar_e_enviar_relatorio():
 
         doc.add_paragraph("\n")
 
-        # 4. Busca INTELIGENTE da Imagem (Consertado para 'in')
+        # 4. Busca Automática de Fotos em qualquer parte da planilha
         doc.add_heading("📸 Comprovação Visual do Andamento", level=2)
         foto_anexada = False
         
@@ -76,7 +84,9 @@ def gerar_e_enviar_relatorio():
             valores_coluna = df[col].dropna().astype(str).tolist()
             for valor in valores_coluna:
                 valor_limpo = valor.strip()
+                # Se encontrar qualquer célula começando com link de internet
                 if valor_limpo.startswith("http://") or valor_limpo.startswith("https://"):
+                    # Se for link do postimg, imgur, google drive ou contiver extensão de imagem
                     if any(ext in valor_limpo.lower() for ext in ['.jpg', '.jpeg', '.png', 'postimg', 'drive.google']):
                         try:
                             resposta_imagem = requests.get(valor_limpo, timeout=15)
@@ -99,7 +109,9 @@ def gerar_e_enviar_relatorio():
 
         # 5. Tabela Geral de Materiais
         doc.add_heading("📋 Tabela Consolidada de Controle", level=2)
-        colunas_exibicao = [c for c in df.columns if 'Link' not in c and 'ID' not in c and 'Foto' not in c]
+        
+        # Filtra colunas de links para não poluírem a tabela visual do Word
+        colunas_exibicao = [c for c in df.columns if 'http' not in str(c).lower() and '.jpg' not in str(c).lower()]
         
         tabela_dados = doc.add_table(rows=1, cols=len(colunas_exibicao))
         tabela_dados.style = 'Table Grid'
@@ -118,7 +130,7 @@ def gerar_e_enviar_relatorio():
                 else:
                     celulas_linha[i].text = str(valor_celula) if not pd.isna(valor_celula) else ""
 
-        # 6. Salva e despacha para o Telegram
+        # 6. Salva o arquivo de Word e despacha para o Telegram
         nome_doc = "Relatorio_Automatico_Obra.docx"
         doc.save(nome_doc)
 
@@ -127,7 +139,7 @@ def gerar_e_enviar_relatorio():
             payload_arquivos = {"document": arquivo_word}
             payload_dados = {
                 "chat_id": TELEGRAM_CHAT_ID,
-                "caption": "📊 *Relatório Atualizado da Obra!*\nMarcos, relatório gerado com sucesso incluindo a verificação inteligente de imagens!"
+                "caption": "📊 *Relatório Atualizado da Obra!*\nMarcos, o relatório foi gerado com sucesso puxando os dados da sua planilha nova!"
             }
             resposta = requests.post(url_telegram, data=payload_dados, files=payload_arquivos)
             
@@ -138,7 +150,7 @@ def gerar_e_enviar_relatorio():
         return False
 
 # ==========================================
-# PAINEL DO STREAMLIT
+# PAINEL DE INTERFACE DO STREAMLIT
 # ==========================================
 st.title("🚀 Central de Automação de Engenharia")
 st.write("Conectado à Planilha do Google e integrado ao Telegram.")
@@ -151,4 +163,4 @@ if st.button("Disparar Primeiro Teste Agora"):
     if sucesso:
         st.success("Perfeito Marcos! Relatório enviado com sucesso para o Telegram.")
     else:
-        st.error("Erro ao gerar relatório. Verifique os dados da planilha.")
+        st.error("Erro ao gerar relatório. Verifique se a planilha está pública e acessível.")
